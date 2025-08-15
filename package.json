@@ -1,7 +1,4 @@
-// package.json
-// Declara as dependências do seu backend.
-{
-  "name": "ViBot",
+{  "name": "ViBot",
   "version": "1.0.0",
   "private": true,
   "type": "module",
