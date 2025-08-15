@@ -1,6 +1,6 @@
 // api/index.js
-// O código do backend, agora com melhor tratamento de erros.
-import { GoogleGenAI } from "@google/genai";
+// O código do backend, com o nome do pacote corrigido.
+import { GoogleGenAI } from "@google/generative-ai";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
@@ -44,7 +44,8 @@ export default async function handler(req, res) {
                 // Captura e lança o erro da API.
                 const errorData = await response.json().catch(() => ({}));
                 console.error('Erro na chamada da API de imagem:', response.status, errorData);
-                throw new Error('Erro na chamada da API de imagem: ' + response.statusText);
+                // Retorna um erro específico para o frontend
+                return res.status(response.status).json({ error: response.statusText, details: errorData });
             }
 
             const result = await response.json();
