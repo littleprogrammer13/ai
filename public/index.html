@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViBot - Gerador de Imagem e Vídeo</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
+
+    <!-- Container principal da aplicação -->
+    <div class="bg-white rounded-lg shadow-xl w-full max-w-lg h-[90vh] overflow-hidden flex flex-col">
+        
+        <!-- Cabeçalho do chat -->
+        <header class="bg-blue-600 text-white p-4 flex items-center justify-center rounded-t-lg">
+            <h1 class="text-xl font-bold">ViBot</h1>
+        </header>
+
+        <!-- Área de mensagens do chat -->
+        <div id="chat-container" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm">
+            <!-- Mensagem de boas-vindas da IA -->
+            <div class="flex justify-start">
+                <div class="bg-blue-100 text-blue-800 rounded-lg p-3 max-w-[80%]">
+                    Olá! Eu sou o ViBot. Posso conversar com você e também gerar imagens e vídeos.
+                </div>
+            </div>
+        </div>
+
+        <!-- Área de entrada de texto e botões -->
+        <div class="p-4 bg-gray-50 border-t border-gray-200 flex items-center flex-wrap">
+            
+            <input type="text" id="chat-input" placeholder="Digite sua mensagem ou um prompt..." class="flex-1 p-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all min-w-[200px]">
+            
+            <!-- Botão para gerar imagem -->
+            <button id="generate-image-btn" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm w-full sm:w-auto">
+                Gerar Imagem
+            </button>
+            
+            <!-- Botão para gerar vídeo -->
+            <button id="generate-video-btn" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm w-full sm:w-auto">
+                Gerar Vídeo
+            </button>
+
+            <!-- Botão de enviar texto -->
+            <button id="send-button" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm w-full sm:w-auto">
+                Enviar
+            </button>
+        </div>
+    </div>
+
+    <!-- Modal/Message box for alerts -->
+    <div id="alert-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4">
+        <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full">
+            <h3 class="text-lg font-bold mb-2">Atenção</h3>
+            <p id="alert-message" class="text-sm text-gray-700 mb-4"></p>
+            <button id="alert-close-btn" class="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">OK</button>
+        </div>
+    </div>
+
+    <script>
+        const base64ToArrayBuffer = (base64) => {
+            const binaryString = window.atob(base64);
+            const len = binaryString.length;
+            const bytes = new Uint8Array(len);
+            for (let i = 0; i < len; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        };
+
+        const pcmToWav = (pcmData, sampleRate) => {
+            const pcm16 = new Int16Array(pcmData);
+            const buffer = new ArrayBuffer(44 + pcm16.length * 2);
+            const view = new DataView(buffer);
+            let offset = 0;
+            const writeString = (str) => {
+                for (let i = 0; i < str.length; i++) {
+                    view.setUint8(offset + i, str.charCodeAt(i));
+                }
+                offset += str.length;
+            };
+            const writeUint32 = (val) => { view.setUint32(offset, val, true); offset += 4; };
+            const writeUint16 = (val) => { view.setUint16(offset, val, true); offset += 2; };
+
+            writeString('RIFF');
+            writeUint32(36 + pcm16.length * 2);
+            writeString('WAVE');
+            writeString('fmt ');
+            writeUint32(16);
+            writeUint16(1);
+            writeUint16(1);
+            writeUint32(sampleRate);
+            writeUint32(sampleRate * 2);
+            writeUint16(2);
+            writeUint16(16);
+            writeString('data');
+            writeUint32(pcm16.length * 2);
+
+            for (let i = 0; i < pcm16.length; i++) {
+                view.setInt16(offset, pcm16[i], true);
+                offset += 2;
+            }
+            return new Blob([view], { type: 'audio/wav' });
+        };
+
+        const chatContainer = document.getElementById('chat-container');
+        const chatInput = document.getElementById('chat-input');
+        const sendButton = document.getElementById('send-button');
+        const generateImageBtn = document.getElementById('generate-image-btn');
+        const generateVideoBtn = document.getElementById('generate-video-btn');
+        const alertModal = document.getElementById('alert-modal');
+        const alertMessage = document.getElementById('alert-message');
+        const alertCloseBtn = document.getElementById('alert-close-btn');
+
+        let chatHistory = [];
+        let loadingIndicator = null;
+        let isProcessing = false;
+
+        function showAlert(message) {
+            alertMessage.textContent = message;
+            alertModal.style.display = 'flex';
+        }
+
+        function addMessage(content, sender, type = 'text') {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('flex', 'flex-col', sender === 'user' ? 'items-end' : 'items-start');
+
+            if (type === 'text') {
+                const textElement = document.createElement('div');
+                textElement.classList.add('rounded-lg', 'p-3', 'max-w-[80%]', 'break-words', 'whitespace-pre-wrap');
+                textElement.classList.add(sender === 'user' ? 'bg-blue-600' : 'bg-blue-100');
+                textElement.classList.add(sender === 'user' ? 'text-white' : 'text-gray-800');
+                textElement.innerText = content;
+                messageElement.appendChild(textElement);
+            } else if (type === 'image') {
+                const imageContainer = document.createElement('div');
+                imageContainer.classList.add('bg-blue-100', 'text-blue-800', 'rounded-lg', 'p-3', 'max-w-[80%]', 'flex', 'flex-col');
+                imageContainer.innerHTML = `<p><strong>Imagem gerada:</strong></p>`;
+                const imageElement = document.createElement('img');
+                imageElement.src = `data:image/png;base64,${content.imageData}`;
+                imageElement.classList.add('rounded-lg', 'w-full', 'h-auto', 'mt-2');
+                imageContainer.appendChild(imageElement);
+                messageElement.appendChild(imageContainer);
+            } else if (type === 'video') {
+                const videoMessageElement = document.createElement('div');
+                videoMessageElement.classList.add('bg-blue-100', 'text-blue-800', 'rounded-lg', 'p-3', 'max-w-[80%]');
+                videoMessageElement.innerHTML = `
+                    <p><strong>Vídeo gerado:</strong></p>
+                    <p class="text-sm my-2"><i>${content.prompt}</i></p>
+                    <video controls class="w-full mt-2 rounded-lg" src="${content.videoUrl}"></video>
+                `;
+                messageElement.appendChild(videoMessageElement);
+            }
+
+            if (sender === 'ai' && type === 'text') {
+                const audioBtn = document.createElement('button');
+                audioBtn.innerText = '🔊';
+                audioBtn.classList.add('play-audio-btn', 'text-gray-500', 'hover:text-gray-700', 'ml-1', 'text-sm');
+                audioBtn.onclick = () => speakText(content, audioBtn);
+                messageElement.lastChild.appendChild(audioBtn);
+            }
+
+            chatContainer.appendChild(messageElement);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function showLoading() {
+            loadingIndicator = document.createElement('div');
+            loadingIndicator.classList.add('flex', 'justify-start');
+            loadingIndicator.innerHTML = '<div class="bg-gray-200 text-gray-700 rounded-lg p-3 max-w-[80%]">...</div>';
+            chatContainer.appendChild(loadingIndicator);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+
+        function hideLoading() {
+            if (loadingIndicator) {
+                loadingIndicator.remove();
+                loadingIndicator = null;
+            }
+        }
+
+        async function sendMessage() {
+            if (isProcessing) return;
+            const userMessage = chatInput.value.trim();
+            if (userMessage === '') return;
+            isProcessing = true;
+            addMessage(userMessage, 'user');
+            chatInput.value = '';
+            
+            const contents = [];
+            contents.push({ text: userMessage });
+            chatHistory.push({ role: "user", parts: contents });
+            showLoading();
+
+            try {
+                const payload = { contents: chatHistory };
+                const apiKey = ""; 
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
+
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) { throw new Error('Erro na chamada da API: ' + response.statusText); }
+                const result = await response.json();
+                hideLoading();
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    const aiResponseText = result.candidates[0].content.parts[0].text;
+                    addMessage(aiResponseText, 'ai', 'text');
+                    chatHistory.push({ role: "model", parts: [{ text: aiResponseText }] });
+                } else {
+                    addMessage("Não foi possível obter uma resposta. Tente novamente.", 'ai', 'text');
+                }
+            } catch (error) {
+                console.error("Erro ao enviar a mensagem para a IA:", error);
+                hideLoading();
+                addMessage("Desculpe, algo deu errado. Por favor, tente novamente mais tarde.", 'ai', 'text');
+            } finally {
+                isProcessing = false;
+            }
+        }
+        
+        async function generateImage() {
+            if (isProcessing) return;
+            const prompt = chatInput.value.trim();
+            if (prompt === '') { showAlert('Por favor, digite um prompt para a imagem.'); return; }
+            isProcessing = true;
+            addMessage(prompt, 'user', 'text');
+            chatInput.value = '';
+            showLoading();
+            try {
+                // A requisição aponta para a função serverless no Vercel.
+                const response = await fetch('/api', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, type: 'image' }),
+                });
+                if (!response.ok) { throw new Error('Erro na resposta do servidor.'); }
+                const data = await response.json();
+                hideLoading();
+                if (data.imageData) {
+                    addMessage({ imageData: data.imageData }, 'ai', 'image');
+                } else {
+                    showAlert('Não foi possível gerar a imagem. Verifique o prompt.');
+                }
+            } catch (error) {
+                console.error('Erro ao gerar imagem:', error);
+                hideLoading();
+                showAlert('Erro ao se comunicar com o servidor. Por favor, tente novamente.');
+            } finally {
+                isProcessing = false;
+            }
+        }
+        
+        async function generateVideo() {
+            if (isProcessing) return;
+            const prompt = chatInput.value.trim();
+            if (prompt === '') { showAlert('Por favor, digite um prompt para o vídeo.'); return; }
+            isProcessing = true;
+            addMessage(prompt, 'user', 'text');
+            chatInput.value = '';
+            showLoading();
+            try {
+                // A requisição aponta para a função serverless no Vercel.
+                const response = await fetch('/api', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, type: 'video' }),
+                });
+                if (!response.ok) { throw new Error('Erro na resposta do servidor.'); }
+                const data = await response.json();
+                hideLoading();
+                if (data.videoUrl) {
+                    addMessage({ prompt: prompt, videoUrl: data.videoUrl }, 'ai', 'video');
+                } else {
+                    showAlert('Não foi possível gerar o vídeo. Verifique o prompt.');
+                }
+            } catch (error) {
+                console.error('Erro ao gerar vídeo:', error);
+                hideLoading();
+                showAlert('Erro ao se comunicar com o servidor. Por favor, tente novamente.');
+            } finally {
+                isProcessing = false;
+            }
+        }
+
+        async function speakText(text, button) {
+            button.innerText = '⏳';
+            try {
+                const payload = { contents: [{ parts: [{ text: text }] }], generationConfig: { responseModalities: ["AUDIO"], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: "Kore" } } } }, model: "gemini-2.5-flash-preview-tts" };
+                const apiKey = "";
+                const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`;
+                const response = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+                const result = await response.json();
+                const part = result?.candidates?.[0]?.content?.parts?.[0];
+                const audioData = part?.inlineData?.data;
+                const mimeType = part?.inlineData?.mimeType;
+
+                if (audioData && mimeType && mimeType.startsWith("audio/")) {
+                    const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                    const pcmData = base64ToArrayBuffer(audioData);
+                    const wavBlob = pcmToWav(pcmData, sampleRate);
+                    const audioUrl = URL.createObjectURL(wavBlob);
+                    const audio = new Audio(audioUrl);
+                    audio.play();
+                } else {
+                    console.error("Erro: Dados de áudio não encontrados na resposta da API.");
+                }
+            } catch (error) {
+                console.error("Erro ao reproduzir áudio:", error);
+            } finally {
+                button.innerText = '🔊';
+            }
+        }
+        
+        sendButton.addEventListener('click', sendMessage);
+        generateImageBtn.addEventListener('click', generateImage);
+        generateVideoBtn.addEventListener('click', generateVideo);
+        alertCloseBtn.addEventListener('click', () => { alertModal.style.display = 'none'; });
+
+        chatInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault(); 
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>
