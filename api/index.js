@@ -1,10 +1,9 @@
 // api/index.js
-// O código do backend, com a correção para a geração de vídeos.
+// O código do backend, agora usando o modelo veo-2.0-generate-001, conforme solicitado.
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
-// Verifica se a chave de API está definida.
 if (!apiKey) {
     console.error("Erro: A variável de ambiente GOOGLE_API_KEY não está definida.");
     throw new Error("Missing GOOGLE_API_KEY environment variable.");
@@ -12,7 +11,6 @@ if (!apiKey) {
 
 const ai = new GoogleGenerativeAI({ apiKey: apiKey });
 
-// Função principal que o Vercel irá chamar.
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
         return res.status(405).json({ message: "Método não permitido." });
@@ -55,13 +53,12 @@ export default async function handler(req, res) {
                 res.status(500).json({ error: "Não foi possível gerar a imagem." });
             }
         } else if (type === 'video') {
-            console.log("Iniciando a geração de vídeo...");
+            console.log("Iniciando a geração de vídeo com Veo...");
 
-            // 1. Envia a requisição para iniciar a geração do vídeo.
             const generateVideoPayload = {
                 prompt: prompt
             };
-            const generateVideoApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/veo-3.0-generate-preview:generateVideo?key=${apiKey}`;
+            const generateVideoApiUrl = `https://generativelanguage.googleapis.com/v1beta/models/veo-2.0-generate-001:generateVideo?key=${apiKey}`;
             const generateVideoResponse = await fetch(generateVideoApiUrl, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -77,7 +74,6 @@ export default async function handler(req, res) {
             const operation = await generateVideoResponse.json();
             const operationName = operation.name;
 
-            // 2. Poll the operation status until it's done.
             let operationStatus;
             let videoResult = null;
             while (true) {
@@ -99,7 +95,6 @@ export default async function handler(req, res) {
 
             console.log("Geração de vídeo concluída! Preparando para enviar ao frontend...");
 
-            // 3. Obtém o vídeo gerado.
             const generatedVideoFile = videoResult.generatedVideos[0];
             const fileApiUrl = `https://generativelanguage.googleapis.com/v1beta/${generatedVideoFile.video}?alt=media&key=${apiKey}`;
             const videoBufferResponse = await fetch(fileApiUrl);
