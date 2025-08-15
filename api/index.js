@@ -1,6 +1,6 @@
 // api/index.js
 // O código do backend, com o nome do pacote corrigido.
-import { GoogleGenAI } from "@google/generative-ai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const apiKey = process.env.GOOGLE_API_KEY;
 
@@ -11,7 +11,7 @@ if (!apiKey) {
     throw new Error("Missing GOOGLE_API_KEY environment variable.");
 }
 
-const ai = new GoogleGenAI({ apiKey: apiKey });
+const ai = new GoogleGenerativeAI({ apiKey: apiKey });
 
 // Função principal que o Vercel irá chamar.
 export default async function handler(req, res) {
