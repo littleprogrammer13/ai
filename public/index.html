@@ -1,3 +1,5 @@
+<!-- public/index.html -->
+<!-- Este é o seu frontend ViBot -->
 <!DOCTYPE html>
 <html lang="pt-br">
 <head>
@@ -17,17 +19,13 @@
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
-    <!-- Container principal da aplicação -->
     <div class="bg-white rounded-lg shadow-xl w-full max-w-lg h-[90vh] overflow-hidden flex flex-col">
         
-        <!-- Cabeçalho do chat -->
         <header class="bg-blue-600 text-white p-4 flex items-center justify-center rounded-t-lg">
             <h1 class="text-xl font-bold">ViBot</h1>
         </header>
 
-        <!-- Área de mensagens do chat -->
         <div id="chat-container" class="flex-1 p-4 overflow-y-auto space-y-4 text-sm">
-            <!-- Mensagem de boas-vindas da IA -->
             <div class="flex justify-start">
                 <div class="bg-blue-100 text-blue-800 rounded-lg p-3 max-w-[80%]">
                     Olá! Eu sou o ViBot. Posso conversar com você e também gerar imagens e vídeos.
@@ -35,29 +33,24 @@
             </div>
         </div>
 
-        <!-- Área de entrada de texto e botões -->
         <div class="p-4 bg-gray-50 border-t border-gray-200 flex items-center flex-wrap">
             
             <input type="text" id="chat-input" placeholder="Digite sua mensagem ou um prompt..." class="flex-1 p-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-all min-w-[200px]">
             
-            <!-- Botão para gerar imagem -->
             <button id="generate-image-btn" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm w-full sm:w-auto">
                 Gerar Imagem
             </button>
             
-            <!-- Botão para gerar vídeo -->
             <button id="generate-video-btn" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm w-full sm:w-auto">
                 Gerar Vídeo
             </button>
 
-            <!-- Botão de enviar texto -->
             <button id="send-button" class="mt-2 sm:mt-0 ml-0 sm:ml-2 p-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm w-full sm:w-auto">
                 Enviar
             </button>
         </div>
     </div>
 
-    <!-- Modal/Message box for alerts -->
     <div id="alert-modal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden items-center justify-center p-4">
         <div class="bg-white rounded-lg p-6 shadow-xl max-w-sm w-full">
             <h3 class="text-lg font-bold mb-2">Atenção</h3>
@@ -81,6 +74,7 @@
             const pcm16 = new Int16Array(pcmData);
             const buffer = new ArrayBuffer(44 + pcm16.length * 2);
             const view = new DataView(buffer);
+            
             let offset = 0;
             const writeString = (str) => {
                 for (let i = 0; i < str.length; i++) {
@@ -111,6 +105,7 @@
             }
             return new Blob([view], { type: 'audio/wav' });
         };
+
 
         const chatContainer = document.getElementById('chat-container');
         const chatInput = document.getElementById('chat-input');
@@ -241,14 +236,21 @@
             chatInput.value = '';
             showLoading();
             try {
-                // A requisição aponta para a função serverless no Vercel.
                 const response = await fetch('/api', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt, type: 'image' }),
                 });
-                if (!response.ok) { throw new Error('Erro na resposta do servidor.'); }
+                
                 const data = await response.json();
+                
+                if (!response.ok) {
+                    hideLoading();
+                    const errorMessage = data.details?.error?.message || data.error || 'Erro desconhecido.';
+                    showAlert(`Erro: ${errorMessage}`);
+                    return;
+                }
+                
                 hideLoading();
                 if (data.imageData) {
                     addMessage({ imageData: data.imageData }, 'ai', 'image');
@@ -273,17 +275,25 @@
             chatInput.value = '';
             showLoading();
             try {
-                // A requisição aponta para a função serverless no Vercel.
                 const response = await fetch('/api', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ prompt, type: 'video' }),
                 });
-                if (!response.ok) { throw new Error('Erro na resposta do servidor.'); }
+
                 const data = await response.json();
+                
+                if (!response.ok) {
+                    hideLoading();
+                    const errorMessage = data.details?.error?.message || data.error || 'Erro desconhecido.';
+                    showAlert(`Erro: ${errorMessage}`);
+                    return;
+                }
+                
                 hideLoading();
-                if (data.videoUrl) {
-                    addMessage({ prompt: prompt, videoUrl: data.videoUrl }, 'ai', 'video');
+                if (data.base64VideoData) {
+                    const videoUrl = `data:video/mp4;base64,${data.base64VideoData}`;
+                    addMessage({ prompt: prompt, videoUrl: videoUrl }, 'ai', 'video');
                 } else {
                     showAlert('Não foi possível gerar o vídeo. Verifique o prompt.');
                 }
